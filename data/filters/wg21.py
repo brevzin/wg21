@@ -269,9 +269,9 @@ def divspan(elem, doc):
               pf.RawInline('}', 'latex'))
         elem.attributes['style'] = 'color: #{}'.format(html_color)
 
-    def _nonnormative(name):
-        _wrap(pf.Span(pf.Str('[ '), pf.Emph(pf.Str('{}:'.format(name.title()))), pf.Space),
-              pf.Span(pf.Str(' — '), pf.Emph(pf.Str('end {}'.format(name.lower()))), pf.Str(' ]')))
+    def _nonnormative(name, number='?'):
+        _wrap(pf.Span(pf.Str('[\xa0'), pf.Emph(pf.Str('{} {}:'.format(name.title(), number))), pf.Space),
+              pf.Span(pf.Str(' —\xa0'), pf.Emph(pf.Str('end {}'.format(name.lower()))), pf.Str('\xa0]')))
 
     def _diff(color, latex_tag, html_tag):
         if isinstance(elem, pf.Span):
@@ -302,8 +302,8 @@ def divspan(elem, doc):
 
         return pf.Superscript(pf.Str(num))
 
-    def example(): _nonnormative('example')
-    def note():    _nonnormative('note')
+    def example(number='?'): _nonnormative('example', number)
+    def note(number='?'):    _nonnormative('note', number)
     def colornote(desc, color):
         _wrap(pf.Str("[ {}: ".format(desc)), pf.Str(' ]'))
         _color(color)
@@ -329,12 +329,20 @@ def divspan(elem, doc):
             pf.debug('mpark/wg21: stable name', target, 'not found')
             return link
 
-    note_cls = next(iter(cls for cls in elem.classes if cls in {'example', 'note', 'ednote', 'draftnote', 'draftnote-blue'}), None)
-    if note_cls == 'example':  example()
-    elif note_cls == 'note':   note()
-    elif note_cls == 'ednote': colornote("Editor's note", '0000ff')
-    elif note_cls == 'draftnote': colornote('Drafting note', '01796F')
-    elif note_cls == 'draftnote-blue': colornote('Drafting note', '0000ff'); return
+    for cls in elem.classes:
+        if cls.startswith('note'):
+            note(cls[4:] or '?')
+        elif cls.startswith('example'):
+            example(cls[7:] or '?')
+        elif cls == 'ednote':
+            colornote("Editor's note", '0000ff')
+        elif cls == 'draftnote':
+            colornote('Drafting note', '01796F')
+        elif cls == 'draftnote-blue':
+            colornote('Drafting note', '0000ff')
+        else:
+            continue
+        break
 
     diff_cls = next(iter(cls for cls in elem.classes if cls in {'add', 'rm'}), None)
     if diff_cls == 'add':  add()
