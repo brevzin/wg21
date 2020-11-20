@@ -17,7 +17,7 @@ def prepare(doc):
     doc.metadata['pagetitle'] = pf.convert_text(
         pf.Plain(*doc.metadata['title'].content),
         input_format='panflute',
-        output_format='markdown')
+        output_format='plain')
 
     datadir = doc.get_metadata('datadir')
 
