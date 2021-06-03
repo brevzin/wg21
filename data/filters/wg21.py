@@ -442,6 +442,42 @@ def divspan(elem, doc):
             continue
         break
 
+    if isinstance(elem, pf.Span) and 'indel' in elem.classes:
+      """
+      [aaa<-bbb]{.indel} is [aaa]{.diffins} [bbb]{.diffdel}
+      """
+      to_ins = []
+      to_del = []
+      seen_sep = False
+      def _append(e):
+        if seen_sep:
+          to_del.append(e)
+        else:
+          to_ins.append(e)
+      for i in elem.content:
+          if not isinstance(i, pf.Str) or '<-' not in i.text:
+            _append(i)
+          else:
+            first, second = i.text.split('<-', maxsplit=1)
+            if first:
+              to_ins.append(pf.Str(text=first))
+            if second:
+              to_del.append(pf.Str(text=second))
+            seen_sep = True
+
+      content = []
+      if to_ins:
+        content.append(pf.Span(*to_ins, classes=['diffins']))
+      if to_del:
+        if content:
+          content.append(pf.Space)
+        content.append(pf.Span(*to_del, classes=['diffdel']))
+
+      if len(content) == 1:
+        return content[0]
+      else:
+        return pf.Span(*content)
+
     diff_cls = next(iter(cls for cls in elem.classes if cls in {'add', 'rm'}), None)
     if diff_cls == 'add':  add()
     elif diff_cls == 'rm': rm()
