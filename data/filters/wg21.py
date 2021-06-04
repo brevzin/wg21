@@ -469,8 +469,6 @@ def divspan(elem, doc):
       if to_ins:
         content.append(pf.Span(*to_ins, classes=['diffins']))
       if to_del:
-        if content:
-          content.append(pf.Space)
         content.append(pf.Span(*to_del, classes=['diffdel']))
 
       if len(content) == 1:
