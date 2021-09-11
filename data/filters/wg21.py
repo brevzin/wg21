@@ -7,7 +7,12 @@ import panflute as pf
 import re
 
 embedded_md = re.compile('@@(.*?)@@|@(.*?)@')
+expos_name = re.compile('\$([\w\-\s]*?)\$')
 stable_names = {}
+current_pnum = {}
+current_note = 0
+current_example = 0
+current_pnum_count = 0
 
 def prepare(doc):
     date = doc.get_metadata('date')
@@ -17,12 +22,12 @@ def prepare(doc):
     doc.metadata['pagetitle'] = pf.convert_text(
         pf.Plain(*doc.metadata['title'].content),
         input_format='panflute',
-        output_format='markdown')
+        output_format='plain')
 
     datadir = doc.get_metadata('datadir')
 
     with open(os.path.join(datadir, 'annex-f'), 'r') as f:
-        stable_names.update(line.split(maxsplit=1) for line in f)
+        stable_names.update(line.rstrip().split(maxsplit=1) for line in f)
 
     def highlighting(output_format):
         return pf.convert_text(
@@ -167,10 +172,27 @@ def finalize(doc):
             if group is not None:
                 return repl2(group)
 
+        def repl_expos(match_obj):
+            match = match_obj[1]
+            if not match or match.isspace():  # $  $
+                return match
+            if doc.format == 'latex':
+                pf.debug('Exposition-only names in latex is totally untested')
+                result = "\\textitalic{{{}}}".format(match)
+            elif doc.format == 'html':
+                result = '<em>{}</em>'.format(match)
+            else:
+                raise ValueError('Unsupported doc format for expos-name')
+            return result
+
         if isinstance(elem, pf.Code):
-            result = pf.RawInline(embedded_md.sub(repl, text), doc.format)
+            text = embedded_md.sub(repl, text)
+            text = expos_name.sub(repl_expos, text)
+            result = pf.RawInline(text, doc.format)
         elif isinstance(elem, pf.CodeBlock):
-            result = pf.RawBlock(embedded_md.sub(repl, text), doc.format)
+            text = embedded_md.sub(repl, text)
+            text = expos_name.sub(repl_expos, text)
+            result = pf.RawBlock(text, doc.format)
 
         if 'diff' not in elem.classes:
             return result
@@ -269,9 +291,9 @@ def divspan(elem, doc):
               pf.RawInline('}', 'latex'))
         elem.attributes['style'] = 'color: #{}'.format(html_color)
 
-    def _nonnormative(name):
-        _wrap(pf.Span(pf.Str('[ '), pf.Emph(pf.Str('{}:'.format(name.title()))), pf.Space),
-              pf.Span(pf.Str(' — '), pf.Emph(pf.Str('end {}'.format(name.lower()))), pf.Str(' ]')))
+    def _nonnormative(name, number='?'):
+        _wrap(pf.Span(pf.Str('[\xa0'), pf.Emph(pf.Str('{} {}:'.format(name.title(), number))), pf.Space),
+              pf.Span(pf.Str(' —\xa0'), pf.Emph(pf.Str('end {}'.format(name.lower()))), pf.Str('\xa0]')))
 
     def _diff(color, latex_tag, html_tag):
         if isinstance(elem, pf.Span):
@@ -288,28 +310,82 @@ def divspan(elem, doc):
         _color(doc.get_metadata(color))
 
     def pnum():
+        global current_pnum
         num = pf.stringify(elem)
+
+        depth = num.count('.')
+        parts = num.split('.')
+
+        def reset_below(i):
+            to_delete = [k for k in current_pnum if k > i]
+            for k in to_delete:
+                del current_pnum[k]
+
+        # If we see a level N, always reset levels below it.
+        reset_below(depth)
+
+        for i in range(len(parts)):
+            # placeholder pnum parts are expressed by #
+            if parts[i] == '#':
+                # replace placeholder by:
+                # - last used value if this is not the last part
+                # - last used value + 1 otherwise
+                if i == depth:
+                    pt = current_pnum.get(i, 0) + 1
+                    parts[i] = str(pt)
+                    current_pnum[i] = pt
+                else:
+                    pt = current_pnum.get(i)
+                    if pt is None:
+                      pf.debug('Missing current value for non-lowest-level placeholder in {}'.format(num))
+                      pt = 1
+                      current_pnum[i] = pt
+                      reset_below(i)
+                    parts[i] = str(pt)
+            else:
+                try:
+                    val = int(parts[i])
+                    if i not in current_pnum or current_pnum[i] != val:
+                        current_pnum[i] = val
+                        # When we see a new value at a level,
+                        # reset everything below that level.
+                        reset_below(i)
+                except ValueError:
+                  pass
+
+        num = '.'.join(parts)
 
         if '.' in num:
             num = '({})'.format(num)
+
+        global current_pnum_count
+        current_pnum_count = current_pnum_count + 1
 
         if doc.format == 'latex':
             return pf.RawInline('\\pnum{{{}}}'.format(num), 'latex')
         elif doc.format == 'html':
             return pf.Span(
-                pf.RawInline('<a class="marginalized">{}</a>'.format(num), 'html'),
+                pf.RawInline(f'<a class="marginalized" href="#pnum_{current_pnum_count}"'
+                f' id="pnum_{current_pnum_count}">{num}</a>', 'html'),
                 classes=['marginalizedparent'])
 
         return pf.Superscript(pf.Str(num))
 
-    def example(): _nonnormative('example')
-    def note():    _nonnormative('note')
-    def ednote():
-        _wrap(pf.Str("[ Editor's note: "), pf.Str(' ]'))
-        _color('0000ff')
+    def example(number='?'): _nonnormative('example', number)
+    def note(number='?'):    _nonnormative('note', number)
+    def colornote(desc, color):
+        _wrap(pf.Str("[ {}: ".format(desc)), pf.Str(' ]'))
+        _color(color)
 
     def add(): _diff('addcolor', 'uline', 'ins')
     def rm():  _diff('rmcolor', 'sout', 'del')
+
+    if isinstance(elem, pf.Header):
+        # When entering a new section, reset all auto numbering.
+        global current_pnum, current_example, current_note
+        current_pnum = {}
+        current_example = 0
+        current_note = 0
 
     if not any(isinstance(elem, cls) for cls in [pf.Div, pf.Span]):
         return None
@@ -329,10 +405,76 @@ def divspan(elem, doc):
             pf.debug('mpark/wg21: stable name', target, 'not found')
             return link
 
-    note_cls = next(iter(cls for cls in elem.classes if cls in {'example', 'note', 'ednote'}), None)
-    if note_cls == 'example':  example()
-    elif note_cls == 'note':   note()
-    elif note_cls == 'ednote': ednote(); return
+    for cls in elem.classes:
+        if cls.startswith('note'):
+            num = cls[4:]
+            if num == '-':
+                num = '?'
+            elif num:
+                try:
+                    current_note = int(num)
+                except ValueError:
+                    pass
+            else:
+                current_note = current_note + 1
+                num = str(current_note)
+            note(num)
+        elif cls.startswith('example'):
+            num = cls[7:]
+            if num == '-':
+              num = '?'
+            elif num:
+                try:
+                    current_example = int(num)
+                except ValueError:
+                    pass
+            else:
+                current_example = current_example + 1
+                num = str(current_example)
+            example(num)
+        elif cls == 'ednote':
+            colornote("Editor's note", '0000ff')
+        elif cls == 'draftnote':
+            colornote('Drafting note', '01796F')
+        elif cls == 'draftnote-blue':
+            colornote('Drafting note', '0000ff')
+        else:
+            continue
+        break
+
+    if isinstance(elem, pf.Span) and 'indel' in elem.classes:
+      """
+      [aaa<-bbb]{.indel} is [aaa]{.diffins} [bbb]{.diffdel}
+      """
+      to_ins = []
+      to_del = []
+      seen_sep = False
+      def _append(e):
+        if seen_sep:
+          to_del.append(e)
+        else:
+          to_ins.append(e)
+      for i in elem.content:
+          if not isinstance(i, pf.Str) or '<-' not in i.text:
+            _append(i)
+          else:
+            first, second = i.text.split('<-', maxsplit=1)
+            if first:
+              to_ins.append(pf.Str(text=first))
+            if second:
+              to_del.append(pf.Str(text=second))
+            seen_sep = True
+
+      content = []
+      if to_ins:
+        content.append(pf.Span(*to_ins, classes=['diffins']))
+      if to_del:
+        content.append(pf.Span(*to_del, classes=['diffdel']))
+
+      if len(content) == 1:
+        return content[0]
+      else:
+        return pf.Span(*content)
 
     diff_cls = next(iter(cls for cls in elem.classes if cls in {'add', 'rm'}), None)
     if diff_cls == 'add':  add()
