@@ -76,7 +76,7 @@ def finalize(doc):
         if 'raw' in elem.classes:
             return None
 
-        if not any(cls in elem.classes for cls in ['cpp', 'default', 'diff']):
+        if not any(cls in elem.classes for cls in ['cpp', 'nasm', 'default', 'diff']):
             return None
 
         code_elems.append(elem)
@@ -206,7 +206,7 @@ def finalize(doc):
         if 'raw' in elem.classes:
             return None
 
-        if not any(cls in elem.classes for cls in ['cpp', 'default', 'diff']):
+        if not any(cls in elem.classes for cls in ['nasm', 'cpp', 'default', 'diff']):
             return None
 
         return convert(*next(converted))
