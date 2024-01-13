@@ -69,6 +69,7 @@
       <item>const_cast</item>
       <item>decltype</item>
       <item>delete</item>
+      <item>do_return</item>
       <item>dynamic_cast</item>
       <item>enum</item>
       <item>explicit</item>
