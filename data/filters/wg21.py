@@ -14,7 +14,7 @@ import panflute as pf
 import re
 
 embedded_md = re.compile('@@(.*?)@@|@(.*?)@')
-expos_name = re.compile('\$([\w\-\s]*?)\$')
+expos_name = re.compile(r'\$([\w\-\s]*?)\$')
 stable_names = {}
 current_pnum = {}
 current_note = 0
